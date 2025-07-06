@@ -4,21 +4,19 @@
 
 cacro를 통해 모노레포를 구현하는 과정에서 [package > component](외부 패키지의 컴포넌트)를 어플리케이션 중 하나에서 사용할 때에 아래와 같이 null 참조 오류가 발생하였다.
 
-
 # ❏ 문제 분석
 
 > 어플리케이션 빌드 이후 외부 패키지(component 등)를 사용할 때, **외부 모듈에서 사용하는 React Hook이 정상적으로 동작하지 않음**
-> 
 
-위와 같은 현상이 발생하는 이유는 모노레포에 있는 애플리케이션들, 패키지에서 각각 사용하는 dependency가 존재하는데, 서로 다른 버전으로 설치될 경우 런타임에서 **중복 설치**가 일어나고, 이로 인해 React의 context, hook, ref가 깨지며 null 참조 오류가 발생하기 때문이다. 
+위와 같은 현상이 발생하는 이유는 모노레포에 있는 애플리케이션들, 패키지에서 각각 사용하는 dependency가 존재하는데, 서로 다른 버전으로 설치될 경우 런타임에서 **중복 설치**가 일어나고, 이로 인해 React의 context, hook, ref가 깨지며 null 참조 오류가 발생하기 때문이다.
 
 cacro의 package구조는 아래와 같다. 총 3가지 분류의 package가 아래와 같은 구조로 생성된게 된다.
 
-| 항목 | 분류 |
-| --- | --- |
-| **앱의 package.json** | 앱 고유의 의존성과 실행 스크립트를 명시 (예: Next.js, React, Express 등) |
-| **공통 패키지의 package.json** | 다른 앱들이 import해서 쓰기 위한 모듈로 독립 구성 (예: @myorg/ui) |
-| **모노레포 루트의 package.json** | 전체 도구 및 스크립트 관리 (eslint, prettier, devDependencies) |
+| 항목                             | 분류                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| **앱의 package.json**            | 앱 고유의 의존성과 실행 스크립트를 명시 (예: Next.js, React, Express 등) |
+| **공통 패키지의 package.json**   | 다른 앱들이 import해서 쓰기 위한 모듈로 독립 구성 (예: @myorg/ui)        |
+| **모노레포 루트의 package.json** | 전체 도구 및 스크립트 관리 (eslint, prettier, devDependencies)           |
 
 ```jsx
 monorepo/
@@ -87,7 +85,7 @@ monorepo/
 }
 ```
 
-위와 같이 `app`,`packages`의 `dependency`에 `react`, `react-dom`을 설치 하지 않고 `peerDependecies`로 설정을 하는 것이다. `monorepo/package.json(root)`에만  dependency로 설치하게 되는 것이다.
+위와 같이 `app`,`packages`의 `dependency`에 `react`, `react-dom`을 설치 하지 않고 `peerDependecies`로 설정을 하는 것이다. `monorepo/package.json(root)`에만 dependency로 설치하게 되는 것이다.
 
 peerDependency로 설정하게 되면, 패키지를 직접 설치하지 않고 호스트가 설치하도록 유도하는 방식으로 root가 react, react-dom을 설치하게 된다. 즉 app1, package의 입장에서 보면 “나는 React에 의존하고 있지만, 내가 직접 설치하는 것이 아닌 너(루트)가 설치해줘”라고 명시하는 것이다. 이를 통해 dependency간의 충돌을 방지할 수 있다.
 
