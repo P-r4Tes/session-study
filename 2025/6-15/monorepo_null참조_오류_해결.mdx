@@ -1,0 +1,100 @@
+# ❏ 배경
+
+최근 케어링 내에서 프로덕트의 수가 증가하고, 프론트엔드 개발자 인력이 부족한 상황이 발생하였다. 이로 인해 모노레포 및 디자인 시스템을 도입하고자 의사결정하였다.
+
+cacro를 통해 모노레포를 구현하는 과정에서 [package > component](외부 패키지의 컴포넌트)를 어플리케이션 중 하나에서 사용할 때에 아래와 같이 null 참조 오류가 발생하였다.
+
+![image.png](attachment:e1056903-f0aa-4b8d-a5c7-30fbac19a8a0:image.png)
+
+# ❏ 문제 분석
+
+> ERP 어플리케이션 빌드 이후 외부 패키지(component 등)를 사용할 때, **외부 모듈에서 사용하는 React Hook이 정상적으로 동작하지 않음**
+> 
+
+위와 같은 현상이 발생하는 이유는 모노레포에 있는 애플리케이션들, 패키지에서 각각 사용하는 dependency가 존재하는데, 서로 다른 버전으로 설치될 경우 런타임에서 **중복 설치**가 일어나고, 이로 인해 React의 context, hook, ref가 깨지며 null 참조 오류가 발생하기 때문이다. 
+
+cacro의 package구조는 아래와 같다. 총 3가지 분류의 package가 아래와 같은 구조로 생성된게 된다.
+
+| 항목 | 분류 |
+| --- | --- |
+| **앱의 package.json** | 앱 고유의 의존성과 실행 스크립트를 명시 (예: Next.js, React, Express 등) |
+| **공통 패키지의 package.json** | 다른 앱들이 import해서 쓰기 위한 모듈로 독립 구성 (예: @myorg/ui) |
+| **모노레포 루트의 package.json** | 전체 도구 및 스크립트 관리 (eslint, prettier, devDependencies) |
+
+```jsx
+monorepo/
+├── apps/
+│   ├── app1/
+│   │   └── package.json  # 예: depends on "@myorg/ui"
+│   └── app2/
+│       └── package.json
+├── packages/
+│   ├── ui/
+│   │   └── package.json  # name: "@myorg/ui"
+│   └── utils/
+│       └── package.json
+├── package.json  # 전체 공통 devDeps
+└── pnpm-workspace.yaml
+```
+
+이로 인해 특정 애플리케이션 단에서 packages에 있는 컴포넌트 혹은 util을 사용할 때에 모듈 버전 간의 충돌이 일어나 null 참조 오류가 발생하게 되는 것이다.
+
+# ❏ 해결책
+
+이를 해결하기 위해서 2가지 방식을 사용할 수 있다. 첫번째는 `peerDependency`를 사용하는 방법과 두번째는 `yarn dedupe`를 활용하는 방식이다. 먼저 `peerDependency`를 활용하는 방법부터 알아보도록 하겠다.
+
+### **01. peerDependency를 활용한 문제해결 방법**
+
+- react, react-dom, styled-components 등을 **루트에만 설치**
+- 각 패키지(component, erp 등)에서는 **peerDependencies로만 선언**
+
+이 두가지 방법으로 문제를 해결할 수 있는데 이를 코드로 보면 아래와 같다.
+
+```jsx
+// monorepo/package.json
+
+{
+	// ...
+	"dependencies": {
+		"react": "18.3.1",
+		"react-datepicker": "8.2.1",
+		"react-dom": "18.3.1",
+		"styled-components": "^6.1.17",
+	}
+}
+```
+
+```jsx
+// monorepo/apps/app1/package.json
+
+{
+	// ...
+	"peerDependencies": {
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0"
+	}
+}
+```
+
+```jsx
+// monorepo/packages/ui/package.json
+
+{
+	// ...
+	"peerDependencies": {
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0"
+	}
+}
+```
+
+위와 같이 `app`,`packages`의 `dependency`에 `react`, `react-dom`을 설치 하지 않고 `peerDependecies`로 설정을 하는 것이다. `monorepo/package.json(root)`에만  dependency로 설치하게 되는 것이다.
+
+peerDependency로 설정하게 되면, 패키지를 직접 설치하지 않고 호스트가 설치하도록 유도하는 방식으로 root가 react, react-dom을 설치하게 된다. 즉 app1, package의 입장에서 보면 “나는 React에 의존하고 있지만, 내가 직접 설치하는 것이 아닌 너(루트)가 설치해줘”라고 명시하는 것이다. 이를 통해 dependency간의 충돌을 방지할 수 있다.
+
+### **02. yarn dedupe를 활용한 depency 충돌 방지**
+
+- yarn install
+- yarn dedupe
+
+이렇게 cli 명령어만 쳐주면 충돌이 방지된다. `yarn dedupe`는 설치된 의존성 중 중복된 버전이 존재할 경우 **최적화된 하나의 버전으로 통일**해주는 도구이다. 이를 통해 모노레포 내 여러 위치에서 같은 라이브러리를 **한 버전만 설치해서 공유**하는 구조를 만들어준다.
